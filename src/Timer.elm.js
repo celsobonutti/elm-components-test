@@ -1,11 +1,11 @@
 export function setup(instance, domNode) {
   var state = { intervalId: null, tickCount: 0 };
 
-  instance.on("startTimer", function (intervalMs) {
+  instance.on("startTimer", function ({ intervalMs, tickCount }) {
     if (state.intervalId) {
       clearInterval(state.intervalId);
     }
-    state.tickCount = 0;
+    state.tickCount = tickCount;
     state.intervalId = setInterval(function () {
       state.tickCount++;
       instance.send("onTick", state.tickCount);
@@ -18,8 +18,6 @@ export function setup(instance, domNode) {
       state.intervalId = null;
     }
   });
-
-  return state;
 }
 
 export function teardown(instance, domNode, state) {

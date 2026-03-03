@@ -15,6 +15,7 @@ type Msg
     = Tick Int
     | StartClicked
     | StopClicked
+    | Reset
 
 
 type alias Model =
@@ -38,12 +39,21 @@ update msg props model =
 
         StartClicked ->
             ( { model | running = True }
-            , startTimer 1000
+            , startTimer { intervalMs = 1000, tickCount = model.tickCount }
             )
 
         StopClicked ->
             ( { model | running = False }
             , stopTimer
+            )
+
+        Reset ->
+            ( { model | tickCount = 0 }
+            , if model.running then
+                Cmd.batch [stopTimer, startTimer { intervalMs = 1000, tickCount = 0 }, emit (props.onTick 0) ]
+
+              else
+                emit (props.onTick 0)
             )
 
 
@@ -56,6 +66,7 @@ view props model =
 
           else
             button [ onClick (Internal StartClicked) ] [ text "Start" ]
+        , button [ onClick (Internal Reset) ] [ text "Reset" ]
         ]
 
 
@@ -70,7 +81,7 @@ onPropsChange _ _ model =
 
 
 -- Component command: starts the timer with given interval in ms
-startTimer : Int -> Cmd (ComponentMsg Msg parentMsg)
+startTimer : { intervalMs : Int, tickCount : Int } -> Cmd (ComponentMsg Msg parentMsg)
 
 
 -- Component command: stops the timer
