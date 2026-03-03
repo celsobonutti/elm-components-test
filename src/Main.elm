@@ -16,6 +16,7 @@ type alias Model =
 
 type Msg
     = Ticked Int
+    | ResetTimer
     | Increment
     | WrapperInnerIncrement
     | ResetFromWrapper
@@ -40,6 +41,9 @@ update msg model =
         Ticked n ->
             { model | timerTicks = n }
 
+        ResetTimer ->
+            { model | timerTicks = 0, resetCount = model.resetCount + 1 }
+
         Increment ->
             { model | parentCount = model.parentCount + 1 }
 
@@ -47,7 +51,7 @@ update msg model =
             { model | parentCount = model.parentCount + 1 }
 
         ResetFromWrapper ->
-            { model | resetCount = model.resetCount + 1 }
+            { model | parentCount = 0, resetCount = model.resetCount + 1 }
 
 
 view : Model -> Html Msg
@@ -66,7 +70,7 @@ view model =
             ]
         , hr [] []
         , h2 [] [ text "Timer (JS effects)" ]
-        , Timer.timer { label = "Timer", onTick = Ticked }
+        , Timer.timer { label = "Timer", onTick = Ticked, onReset = ResetTimer }
         , hr [] []
         , h2 [] [ text "Counter (local + parent state)" ]
         , Counter.counter { value = model.parentCount, onIncrement = Increment }

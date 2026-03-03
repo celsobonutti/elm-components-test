@@ -8,6 +8,7 @@ import Html.Events exposing (onClick)
 type alias Props parentMsg =
     { label : String
     , onTick : Int -> parentMsg
+    , onReset : parentMsg
     }
 
 
@@ -50,10 +51,10 @@ update msg props model =
         Reset ->
             ( { model | tickCount = 0 }
             , if model.running then
-                Cmd.batch [stopTimer, startTimer { intervalMs = 1000, tickCount = 0 }, emit (props.onTick 0) ]
+                Cmd.batch [stopTimer, startTimer { intervalMs = 1000, tickCount = 0 }, emit (props.onReset) ]
 
               else
-                emit (props.onTick 0)
+                emit (props.onReset)
             )
 
 
