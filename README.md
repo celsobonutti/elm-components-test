@@ -1,38 +1,110 @@
-# Vite Elm Template
+# Elm Components — Proof of Concept
 
-[![ci](https://github.com/lindsaykwardell/vite-elm-template/actions/workflows/ci.yml/badge.svg)](https://github.com/lindsaykwardell/vite-elm-template/actions/workflows/ci.yml)
-[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-908a85?logo=gitpod)](https://gitpod.io/#https://github.com/lindsaykwardell/vite-elm-template)
+This is a working proof of concept for **stateful, encapsulated components** in Elm. Components follow the Elm Architecture (init/update/view/subscriptions) but live inside the virtual DOM tree with their own local state, scoped JS effects, and parent communication via props and emits.
 
-A default template for building Elm applications using Vite. Includes hot-module reload of Elm modules (courtesy of `vite-plugin-elm`).
+**This works today** — but requires forked versions of the Elm compiler, `elm/virtual-dom`, and `elm/browser`. Nothing here is upstream or official.
 
-> Vite (French word for "fast", pronounced /vit/) is a build tool that aims to provide a faster and leaner development experience for modern web projects.
+## What's in this demo
 
-> Elm is a functional language that compiles to JavaScript. It helps you make websites and web apps. It has a strong emphasis on simplicity and quality tooling.
+The test app (`src/Main.elm`) renders three components that showcase the full feature set:
 
-Live demo site: https://vite-elm-template.netlify.app/
+- **Timer** — Local state (tick count, running flag) + co-located JS effects (`startTimer`/`stopTimer` commands, `onTick` subscription via `Timer.elm.js`). Emits tick count and reset events to the parent.
+- **Counter** — Local state (`+local` button) alongside parent-controlled state (`+parent` button emits to parent, which passes the updated count back as a prop).
+- **Wrapper** — Nests a Counter component inside itself. Demonstrates that components compose naturally — the inner Counter emits to Wrapper, and Wrapper can emit to Main.
 
-## Features
+## What's forked
 
-- [Hot Module Reload](https://github.com/hmsk/vite-plugin-elm) of all code in the app (including Elm)
-- [Integration with Vite static asset handling](https://package.elm-lang.org/packages/hmsk/elm-vite-plugin-helper/latest/)
-- Tooling installation via [elm-tooling](https://elm-tooling.github.io/elm-tooling-cli/)
-  - Includes Elm, elm-format, elm-json, and elm-test-rs
-- Basic unit test and [elm-review](https://package.elm-lang.org/packages/jfmengels/elm-review/latest/) examples
-- Github Actions CI for running tests
-- Recommends the [Elm VS Code extension](https://marketplace.visualstudio.com/items?itemName=Elmtooling.elm-ls-vscode)
+| Repository | What changed | Why |
+|---|---|---|
+| **Elm compiler** (0.19.1) | New `component module` syntax, parser/canonicalizer/type-checker/codegen | Enforces the component interface at compile time, generates the wiring code |
+| **elm/virtual-dom** | New `__2_COMPONENT` vnode type, diff/patch/mount/unmount lifecycle | Components need their own DOM lifecycle, event dispatcher, and effect routing |
+| **elm/browser** | `Browser.Component` module, `ComponentMsg(Internal, Emit)`, `emit` helper | Elm-side API for component authors |
 
-## Get Started
+The forked packages live alongside this test app as local packages (the compiler's `local-packages` feature).
+
+## Design decisions
+
+### Components are a module type, not a library pattern
+
+```elm
+component module Timer where { msg = Msg, props = Props } exposing (timer)
+```
+
+The `component module` declaration tells the compiler this module defines a component. The compiler validates the interface (Props, Msg, Model, and the 5 required functions) and generates the exposed constructor function. The parent sees a simple function:
+
+```elm
+Timer.timer : { label : String, onTick : Int -> msg, onReset : msg } -> Html msg
+```
+
+The component's internal Msg, Model, and ComponentMsg machinery are completely hidden.
+
+**Why a module type instead of a library function?** A library-only approach (Phase 1 of this project) works but requires manual `Internal`/`Emit` wrapping in every view handler and can't enforce the component contract. The compiler syntax eliminates boilerplate and catches mistakes at compile time.
+
+### Parent message type stays abstract
+
+Components never name the parent's concrete `Msg` type. Props are parameterized by `parentMsg`:
+
+```elm
+type alias Props parentMsg =
+    { label : String
+    , onTick : Int -> parentMsg
+    }
+```
+
+This means the same component works with any parent. The compiler threads `parentMsg` through all internal types (`ComponentMsg Msg parentMsg`) and erases it in the exposed function signature.
+
+### Each component instance is a mini Elm runtime
+
+Under the hood, each component instance calls `Platform.initialize` to create its own stepper, command queue, and subscription manager. This means components get full Cmd/Sub support (Http, Time, Browser.Events, etc.) for free — effect managers already route correctly per-stepper.
+
+The component's event dispatcher intercepts the virtual DOM's tagger chain:
+- `Internal msg` → runs the component's own update cycle
+- `Emit parentMsg` → unwraps and forwards to the parent's event chain
+
+### Co-located JS effects replace ports for components
+
+Instead of global ports, component modules can declare commands and subscriptions backed by a `.elm.js` file:
+
+```elm
+-- In Timer.elm (declarations without bodies = JS-backed effects)
+startTimer : Int -> Cmd (ComponentMsg Msg parentMsg)
+stopTimer : Cmd (ComponentMsg Msg parentMsg)
+onTick : (Int -> Msg) -> Sub (ComponentMsg Msg parentMsg)
+```
+
+```javascript
+// In Timer.elm.js
+export function setup(instance, domNode) {
+  instance.on("startTimer", function (intervalMs) { /* ... */ });
+  instance.send("onTick", tickCount);
+}
+export function teardown(instance, domNode) { /* cleanup */ }
+```
+
+Each component instance gets its own JS `setup`/`teardown` lifecycle. Two Timers on the same page get independent intervals. This is scoped, instance-level JS interop — something `effect module` (restricted to `elm/` org packages) provides globally but that regular Elm code cannot do.
+
+### Identity is position-based
+
+Like React, component identity is determined by position in the virtual DOM tree + spec reference equality. Same component type at the same position preserves state across parent re-renders. Different type (or removed) triggers unmount/remount.
+
+Props changes are detected via Elm's structural equality (`_Utils_eq`) and trigger `onPropsChange`, giving the component a chance to react.
+
+## Running it
 
 ```bash
-# Clone the template locally, removing the template's Git log
-npx tiged lindsaykwardell/vite-elm-template my-elm-app
+# Compile (requires the forked compiler on your PATH)
+rm -rf elm-stuff && elm make src/Main.elm --output=elm.js
 
-# Enter the project, install dependencies, and get started!
-cd my-elm-app
-npm install
+# Dev server (Vite)
 npm run dev
 ```
 
-For more information about Vite, check out [Vite's official documentation.](https://vitejs.dev/)
+Note: The Vite dev server handles `.elm` file HMR via `vite-plugin-elm`. Changes to `.elm.js` files trigger recompilation automatically (configured in `vite.config.js`), but the HMR wrapper has a known issue with nested `Platform.initialize` — a workaround patch in `node_modules/vite-plugin-elm` is needed and gets lost on `npm install`.
 
-To learn more about Elm, check out [Elm's official homepage](https://elm-lang.org/).
+## Known limitations
+
+- **Not upstream.** This is a personal fork and proof of concept, not a proposal to the Elm core team.
+- **No debugger support.** Component state is opaque to the Elm debugger. Time-travel won't replay component-internal messages.
+- **HMR is fragile.** The `vite-plugin-elm` HMR wrapper doesn't account for nested Platform instances. A manual patch is required.
+- **No keyed list handling.** Components inside `Html.Keyed.node` haven't been tested for state preservation during reorder.
+- **No lazy interaction.** Components inside `Html.lazy` may not receive prop updates if lazy's reference check skips re-rendering.
