@@ -82,12 +82,12 @@ onPropsChange _ _ model =
 
 
 -- Component command: starts the timer with given interval in ms
-startTimer : { intervalMs : Int, tickCount : Int } -> Cmd (ComponentMsg Msg parentMsg)
+port startTimer : { intervalMs : Int, tickCount : Int } -> Cmd (ComponentMsg Msg parentMsg)
 
 
 -- Component command: stops the timer
-stopTimer : Cmd (ComponentMsg Msg parentMsg)
+port stopTimer : Cmd (ComponentMsg Msg parentMsg)
 
 
 -- Component subscription: receives tick count from JS
-onTick : (Int -> Msg) -> Sub (ComponentMsg Msg parentMsg)
+port onTick : (Int -> Msg) -> Sub (ComponentMsg Msg parentMsg)
